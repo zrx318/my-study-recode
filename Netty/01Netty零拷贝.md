@@ -19,7 +19,10 @@ Netty中也用到了FileChannel.transferTo方法，所以Netty的零拷贝也包
 - 通过wrap操作，我们可以将byte[]数组、ByteBuf、ByteBuffer等包装成一个Netty ByteBuff对象，进而避免了拷贝操作。
 - ByteBuf支持slice操作，因此可以将BtyeBuf分解为多个共享同一个存储区域的ByteBuf，避免了内存的拷贝。
 - 通过FileRegion包装的FileChannel.tranferTo实现文件传输，可以直接将文件缓冲区的数据发送到目标Channel，避免了传统通过循环write方式导致的内存拷贝问题。
-
+### add from km:
+- Netty的接收和发送ByteBuffer采用DIRECT BUFFERS，使用堆外直接内存进行Socket读写，不需要进行字节缓冲区的二次拷贝。如果使用传统的堆内存（HEAP BUFFERS）进行Socket读写，JVM会将堆内存Buffer拷贝一份到直接内存中，然后才写入Socket中。相比于堆外直接内存，消息在发送 过程中多了一次缓冲区的内存拷贝。
+-  Netty提供了组合Buffer对象，可以聚合多个ByteBuffer对象，用户可以像操作一个Buffer那样方便的对组合Buffer进行操作，避免了传统通过内存拷贝的方式将几个小Buffer合并成一个大的Buffer。
+- Netty的文件传输采用了transferTo方法，它可以直接将文件缓冲区的数据发送到目标Channel，避免了传统通过循环write方式导致的内存拷贝问题。
 ## 单独分析几种拷贝方式
 ### CompisiteByteBuf
 假设我们有一份协议数据, 它由头部和消息体组成, 而头部和消息体是分别存放在两个 ByteBuf 中的, 我们在代码处理中, 通常希望将 header 和 body 合并为一个 ByteBuf, 方便处理, 那么通常的做法是将 header 和 body 都拷贝到了新的 allBuf 中了, 这无形中增加了两次额外的数据拷贝操作了。CompisiteByteBuf的做法是将 header 与 body 合并为一个逻辑上的 ByteBuf。虽然看起来 CompositeByteBuf 是由两个 ByteBuf 组合而成的, 不过在 CompositeByteBuf 内部, 这两个 ByteBuf 都是单独存在的, CompositeByteBuf 只是逻辑上是一个整体。
