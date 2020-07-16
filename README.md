@@ -1,6 +1,12 @@
 # 我的学习笔记
 ## 阅读须知
-此项目是我为了巩固netty知识点而创建的。主要对部分知识点进行总结和梳理，方便自己复习和学习
+此项目是我为了巩固知识点而创建的。主要对部分知识点进行总结和梳理，方便自己复习和学习
+
+## Sping
+
+1. [BeanFactory与FactoryBean](./Spring/01_BeanFactory与ApplicationContext.md)
+2. [SpringMVC初始化及请求转发实现原理](./Sping/02_SpringMVC 初始化及请求转发实现原理.md)
+3. [Spring循环依赖](./Spring/03_Spring循环依赖.md)
 
 ## MYSQL
 1. [页的概念](./MySQL/01页的概念.md)

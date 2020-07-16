@@ -57,4 +57,84 @@
 ![my-logo.png](../picture/bean生命周期.png)
 　　Spring先是用构造实例化Bean对象 ，创建成功后，Spring会通过以下代码提前将对象暴露出来，此时的对象A还没有完成属性注入，属于早期对象，此时Spring会将这个实例化结束的对象放到一个Map中，并且Spring提供了获取这个未设置属性的实例化对象引用的方法。 结合我们的实例来看，当Spring实例化了A、B、C后，紧接着会去设置对象的属性，此时A依赖B，就会去Map中取出存在里面的单例B对象，以此类推，不会出来循环的问题喽
 
+## 根据源码理解
+
+![image-20200712191803580](../picture/循环依赖1.png)
+
+### 为什么需要三级缓存，而不是一级，二级缓存就好？
+
+如果面试被问到，那我觉得我可以这样答：
+
+#### 一级缓存有什么问题：
+
+加入只有一级缓存，问题就在于，就一个map，里面既有完整的已经ready的bean，也有不完整的，尚未设值field的bean。
+
+如果这时候，有其他线程去这个map里获取bean来用怎么办？拿到的bean，是不完整的，怎么办呢？属性都是null，直接空指针了。
+
+所以就要再加个map，用来存放不完整的bean。所以第一级缓存主要就存已经创建好的可以使用的bean，二级缓存就存只是new了，分配内存了，但是还未设值的bean。
+
+#### 二级缓存就够了？
+
+其实二级缓存就够了，那是因为**没有考虑到Spring的AOP场景**。
+
+假如现在有个A和B两个类相互应用。而B呢是用AOP增强了的。我们知道，AOP增强的Bean是通过代理来实现的，意思就是会生成一个代理的bean。假如A还是引用的原始B，那就有问题了，增强的效果怎么办呢。
+
+所以啊，就得来个三级缓存，存的是一个objectFactory工厂对象，通过工厂对象是可以拿到最终形态的代理后的B。
+
+
+
+## 三级缓存核心源码级别的工作流程，看完不亏
+
+```java
+/**
+* 这里对源码进行了部分删减。但基本创建一个bean，就这几步了~
+*/
+
+protected Object doCreateBean(final String beanName, final RootBeanDefinition mbd, Object[] args) {
+    //1 创建bean对象，此时，实行什么的全是null，可以理解为，只是new了，field还没设值
+    BeanWrapper instanceWrapper = createBeanInstance(beanName, mbd, args);
+    final Object bean = instanceWrapper.getWrappedInstance();
+    
+    if(earlySingletonExposure) {
+        //2 添加到第三级缓存；加进去的，只是个factory，只有循环依赖的时候，才会发挥作用
+        addSingletonFactory(beanName, new ObjecyFactory() {
+            @Override
+            public Object getObject() throws BeansException {
+                return getEarlyBeanReference(beanName, mbd, bean);
+            }
+        });
+    }
+    // 3 把原始bean，存到exposedObject中
+    Object exposedObject = bean;
+    /* 4 填充属性；循环依赖情况下，A/B循环依赖。假设当前为A，那么此时填充A的属性的时候，会去：
+    		new B；
+    		填充的field，发现field里有一个是A类型，然后就去getBean("A")，然后走到第三季缓存中，拿到了A的ObjectFactory，然后调用AOP的后置处理器：getEarlyBeanReference，拿到代理后的bean（假设此处切面满足，要创建代理）；
+    		经过上面的步骤后，B里面，field已经填充ok了，其中，且填充的field是代理后的A，这里民命为proxyA；
+    		B进行其他的后置处理。
+    		B处理完成后，被填充到当前的origin A(原始A)的field中
+   */
+    populateBean(beanName, mbd, instanceWrapper);
+    //5 对A进行后置处理，此时调用AOP后置处理器的，postProcessAfterInitialization；前面我们说了，此时不会再去调用wrapIfNecessary，所以这里直接返回原始A
+    if(exposedObject != null) {
+        exposedObject = initializeBean(beanName, exporsedObject, mbd);
+    }
+    if(earlySingletonExposure){
+        // 6 去缓存里获取A，拿到的A，是proxyA
+        Object earlySingletonReference = getSington(beanName,false);
+        if(earlySingletonReference != null) {
+            //7 exposedObject：originA；   bean：原始A；  earlySingletonReference:proxyA
+            // 此时，下面这个条件是满足的，所以exposedObject，最终替换为proxyA
+            if(exposedObject == bean) {
+                exposedObject = earlySingletonReference;
+            } else if (!this,allowRawInjectionDespiteWrapping && hasDependent){
+                //8
+                ...
+            }
+        }
+    }
+    return exposedObject;
+}
+```
+
+
 
